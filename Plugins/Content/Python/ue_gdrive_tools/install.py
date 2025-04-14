@@ -19,7 +19,7 @@ r = subprocess.run([python_path, "-m", "pip", 'install', "-r", pip_requirements_
 
 # call module list
 r = subprocess.run([python_path, "-m", "pip", "list"], capture_output=True)
-print(r.stdout.decode())
+#print(r.stdout.decode())
 
 # test env
 if not os.path.dirname(tool_dir) in sys.path:

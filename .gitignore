@@ -1,3 +1,14 @@
 *.json
 __pycache__/
 *.pyc
+*.ini
+*.umap
+*.uasset
+*.uproject
+*.fbx
+*.zip
+DerivedDataCache/
+Intermediate/
+Import/
+Saved/
+Config/
