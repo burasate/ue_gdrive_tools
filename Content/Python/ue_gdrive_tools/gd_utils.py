@@ -1,79 +1,67 @@
-# -*- coding: utf-8 -*-
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-import os, io
-from importlib import reload
-from . import config
-reload(config)
+import os
+import io
 
-base_dir = config.ROOT_DIR
+# Set up Google Drive API credentials and service
+SCOPES = ['https://www.googleapis.com/auth/drive']
+creds = None
 
-class drive_handler:
-    def __init__(self):
-        self.SCOPES = ['https://www.googleapis.com/auth/drive']
-        self.token_path = config.TOKEN_PATH
-        self.folder_id = config.PROJECT_DIR_ID
-        self.creds_path = config.CREDS_PATH
-        self.creds = None
-        self.service = self.authenticate()
-        print(f'get folder ID : {config.PROJECT_DIR_ID}')
-        file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
-        if not os.path.basename(config.VERSION_DIR) in list(file_items):
-            self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
-        assert [i for i in list(file_items) if i.endswith('uproject')], '.\n--------\nProject folder should have uproject inside\n--------\n'
-        print('.\n--------\nDrive is connected\n--------\n')
+# Authentication
+def authenticate():
+    global creds
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    service = build('drive', 'v3', credentials=creds)
+    return service
 
-    def authenticate(self):
-        if os.path.exists(self.token_path):
-            self.creds = Credentials.from_authorized_user_file(self.token_path, self.SCOPES)
-        if not self.creds or not self.creds.valid:
-            if self.creds and self.creds.expired and self.creds.refresh_token:
-                self.creds.refresh(Request())
-            else:
-                assert os.path.exists(self.creds_path), '.\n--------\nCouldn\'t be found : config.CREDS_PATH\n--------\n'
-                flow = InstalledAppFlow.from_client_secrets_file(self.creds_path, self.SCOPES)
-                self.creds = flow.run_local_server(port=0)
-            with open(self.token_path, 'w') as token:
-                token.write(self.creds.to_json())
-        service = build('drive', 'v3', credentials=self.creds)
-        return service
+# List files in Google Drive folder
+def list_files_in_drive(service, folder_id):
+    results = service.files().list(q=f"'{folder_id}' in parents", fields="files(id, name)").execute()
+    files = results.get('files', [])
+    file_list = {file['name']: file['id'] for file in files}
+    return file_list
 
-    def list_files_in_drive(self, folder_id):
-        query = f"'{folder_id}' in parents and trashed=false"
-        results = self.service.files().list(
-            q=query,
-            fields="files(id, name)",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True
-        ).execute()
+# Upload a file to Google Drive
+def upload_file(service, file_path, folder_id):
+    file_name = os.path.basename(file_path)
+    media = MediaFileUpload(file_path, mimetype='application/octet-stream')
+    file_metadata = {'name': file_name, 'parents': [folder_id]}
+    file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    print(f"File uploaded: {file['id']}")
+    return file['id']
 
-        files = results.get('files', [])
-        file_list = {file['name']: file['id'] for file in files}
-        return file_list
+# Download a file from Google Drive
+def download_file(service, file_id, destination_path):
+    request = service.files().get_media(fileId=file_id)
+    fh = io.FileIO(destination_path, 'wb')
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+    print(f"Downloaded {destination_path}")
 
-    def create_folder(self, name, parent_id=None):
-        file_metadata = {'name': name, 'mimeType': 'application/vnd.google-apps.folder'}
-        if parent_id:
-            file_metadata['parents'] = [parent_id]
-        file = self.service.files().create(body=file_metadata, fields='id').execute()
-        return file.get('id')
+# Example usage
+if __name__ == '__main__':
+    service = authenticate()
+    folder_id = 'YOUR_FOLDER_ID'  # Replace with your folder ID
 
-    def upload_file(self, file_path, folder_id):
-        file_name = os.path.basename(file_path)
-        media = MediaFileUpload(file_path, mimetype='application/octet-stream')
-        file_metadata = {'name': file_name, 'parents': [folder_id]}
-        file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        print(f"File uploaded: {file['id']}")
-        return file['id']
+    # List files in Google Drive
+    file_list = list_files_in_drive(service, folder_id)
+    print(file_list)
 
-    def download_file(self, file_id, destination_path):
-        request = self.service.files().get_media(fileId=file_id)
-        fh = io.FileIO(destination_path, 'wb')
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-        print(f"Downloaded {destination_path}")
+    # Upload a file to Google Drive
+    upload_file(service, 'path/to/your/file.txt', folder_id)
+
+    # Download a file from Google Drive
+    download_file(service, 'YOUR_FILE_ID', 'path/to/destination/file.txt')

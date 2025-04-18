@@ -1,8 +1,6 @@
 # dev environment
-import ue_gdrive_tools.core as ugdrive
+from ue_gdrive_tools import core as ugd
 from importlib import reload
-reload(ugdrive)
-print(f'.\n=============\n{ugdrive.__file__}\n=============')
+reload(ugd)
 
-
-ugdrive.run()
+ugd.test()
