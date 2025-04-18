@@ -7,9 +7,9 @@ __pycache__/
 *.uproject
 *.fbx
 *.zip
+*.txt
 DerivedDataCache/
 Intermediate/
 Import/
 Saved/
 Config/
-setting/
