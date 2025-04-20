@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from importlib import reload
 import unreal
-import json, os, sys, time
+import json, os, sys, time, subprocess
 
 from . import gd_utils
 from . import ver_utils
@@ -16,17 +16,66 @@ project_dir = system_library.get_project_directory()
 gdrive = None
 
 class editor_utils:
+    editor_load_save_util = unreal.EditorLoadingAndSavingUtils
+    editor_asset_library = unreal.EditorAssetLibrary()
+
+    @staticmethod
+    def get_asset_from_file(full_file_path):
+        '''
+        :param full_file_path:
+        :return: asset object
+        '''
+        print(full_file_path)
+        project_dir = config.PROJECT_DIR.replace('\\', '/')
+        print(project_dir)
+        asset_dir = os.path.dirname(full_file_path).replace('\\', '/')
+        print(asset_dir)
+        assert full_file_path.count('.') == 1
+        name, ext = os.path.basename(full_file_path).split('.')
+        asset_path = '/'.join([asset_dir, name])
+        print(asset_path)
+        asset_path = asset_path.replace('\\', '/').replace(project_dir, '')
+        print(asset_path)
+        asset_path = asset_path.replace('Content/', '/Game/')
+        print(asset_path)
+        asset = editor_utils.editor_asset_library.load_asset(asset_path)
+        print(asset)
+        return asset
+
+    @staticmethod
+    def get_dirty_list():
+        cont_dirty_package_ls = editor_utils.editor_load_save_util.get_dirty_content_packages()
+        map_dirty_package_ls = editor_utils.editor_load_save_util.get_dirty_map_packages()
+        package_path_ls = [i.get_path_name() for i in cont_dirty_package_ls + map_dirty_package_ls]
+        return package_path_ls
+
+    @staticmethod
+    def is_asset_dirty(asset):
+        '''
+        :param asset:
+        :return: bool
+        '''
+        package_path_ls = editor_utils.get_dirty_list()
+        if asset.get_path_name() in package_path_ls:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def save_all_with_dialog():
+        editor_utils.editor_load_save_util.save_dirty_packages_with_dialog(True, True)
+
     @staticmethod
     def save_all():
-        ls_util = unreal.EditorLoadingAndSavingUtils
-        ls_util.save_dirty_packages_with_dialog(True, True)
+        editor_utils.editor_load_save_util.save_dirty_packages_with_dialog(True, True)
 
-def commit_new_version():
+
+def _commit_new_version():
     '''
     :return:
     '''
     print('.\n--------\nCommit_new_version\n--------\n')
-    editor_utils.save_all()
+    editor_utils.save_all_with_dialog()
     zip_path = ver_utils.update_version_zip()
     if not zip_path:
         return
@@ -40,7 +89,7 @@ def commit_new_version():
     else:
         os.remove(zip_path)
 
-def get_package_update():
+def _get_package_update():
     '''
     :return:
     '''
@@ -58,22 +107,58 @@ def get_package_update():
             dest_path = os.path.join(config.VERSION_DIR, fn).replace('\\', '/')
             if not os.path.exists(dest_path):
                 gdrive.download_file(f_id, dest_path)
-        ver_utils.update_version_zip()
+
+    def run_restart_cli():
+        print("Python exists:", os.path.exists(config.PYTHON_PATH))
+        print("CLI exists:", os.path.exists(config.CLI_PATH))
+        cmd = [
+            config.PYTHON_PATH, config.CLI_PATH, 'restart',
+            '-file_path', config.PULL_VERSION_LIST_PATH,
+            '-ueditor_path', sys.executable,
+            '-project_path', config.PROJECT_PATH
+        ]
+        subprocess.Popen(cmd)
+        system_library = unreal.SystemLibrary
+        system_library.quit_editor()
 
     print('.\n--------\nGet_package_update\n--------\n')
     fetch_all_versions()
-    time.sleep(3)
-    files_df = ver_utils.load_files_data()
-    pull_df = files_df[files_df['sync_pull']]
+    db = ver_utils.database()
+    db.get_all(debug=1)
+    pull_df = db.get_pull()
+    ver_utils.log_file.delete_pull_version()
     if not pull_df.index.tolist():
-        print('Already up to date.')
+        print('.\n--------\nProject: Already Up to Date!\n--------\n')
         return
-    for i in pull_df.index.tolist():
-        row = pull_df.loc[i]
-        fp = row['file_path']
-        print(fp, row['sync_pull'])
-        ver_utils.zip_extract_file(row['source'], row['src_name'])
+    else:
+        print('.\n--------\nProject: Found new modified, About to reload UEditor.\n--------\n')
+        for i in pull_df.index.tolist():
+            row = pull_df.loc[i]
+            zip_path = row['source']
+            sub_path = row['src_name']
+
+            print(f'Add pull version task: {sub_path}')
+            log_pull = ver_utils.log_file.pull_version(zip_path, sub_path)
+
+        ed = unreal.EditorDialog.show_message(
+            title="Confirm Action",
+            message="Found new asset update\nWant to reload?",
+            message_type=unreal.AppMsgType.YES_NO,
+            default_value=unreal.AppReturnType.NO
+        )
+        if ed == unreal.AppReturnType.YES:
+            editor_utils.save_all_with_dialog()
+            run_restart_cli()
+
+def save():
+    _commit_new_version()
+
+def load():
+    if editor_utils.get_dirty_list():
+        _commit_new_version()
+    else:
+        _get_package_update()
 
 def run(): # Dev test
-    get_package_update()
-    commit_new_version()
+    load()
+

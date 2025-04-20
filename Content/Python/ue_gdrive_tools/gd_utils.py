@@ -17,14 +17,16 @@ class drive_handler:
         self.token_path = config.TOKEN_PATH
         self.folder_id = config.PROJECT_DIR_ID
         self.creds_path = config.CREDS_PATH
+        self.sa_path = getattr(config, 'SERV_ACC_PATH', None)
         self.creds = None
         self.service = self.authenticate()
-        print(f'get folder ID : {config.PROJECT_DIR_ID}')
-        file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
-        if not os.path.basename(config.VERSION_DIR) in list(file_items):
-            self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
-        assert [i for i in list(file_items) if i.endswith('uproject')], '.\n--------\nProject folder should have uproject inside\n--------\n'
-        print('.\n--------\nDrive is connected\n--------\n')
+        if self.creds:
+            print(f'Get folder ID : {config.PROJECT_DIR_ID}')
+            file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
+            if not os.path.basename(config.VERSION_DIR) in list(file_items):
+                self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
+            assert [i for i in list(file_items) if i.endswith('uproject')], '.\n--------\nProject folder should have uproject inside\n--------\n'
+            print('Drive is connected.')
 
     def authenticate(self):
         if os.path.exists(self.token_path):
