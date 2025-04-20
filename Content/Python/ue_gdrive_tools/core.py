@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
+import json, os, sys, time, subprocess, glob, shutil
 from importlib import reload
 import unreal
-import json, os, sys, time, subprocess
 
 from . import gd_utils
 from . import ver_utils
@@ -14,6 +14,10 @@ base_dir = os.path.dirname( os.path.abspath(__file__) )
 system_library = unreal.SystemLibrary
 project_dir = system_library.get_project_directory()
 gdrive = None
+
+pycache_dirs = glob.glob(os.path.join(base_dir, "**", "__pycache__"), recursive=True)
+for path in pycache_dirs:
+    shutil.rmtree(path)
 
 class editor_utils:
     editor_load_save_util = unreal.EditorLoadingAndSavingUtils
