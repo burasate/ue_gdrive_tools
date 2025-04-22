@@ -58,12 +58,18 @@ class log_file:
     pull_ls_path = config.PULL_VERSION_LIST_PATH
 
     @staticmethod
-    def pull_version(zip_path: str, zip_src_path: str):
+    def pull_version(zip_path, zip_src_path, mode=1):
+        '''
+        :param zip_path:
+        :param zip_src_path:
+        :param mode: 0 is to delete file, 1 is to replace file
+        :return:
+        '''
         rec = []
         if os.path.exists(log_file.pull_ls_path):
             with open(log_file.pull_ls_path) as f_read:
                 rec = json.load(f_read)
-        rec.append([zip_path, zip_src_path])
+        rec.append([zip_path, zip_src_path, mode])
         with open(log_file.pull_ls_path, 'w') as f_write:
             json.dump(rec, f_write, indent=4)
         return rec
@@ -82,11 +88,6 @@ class log_file:
         else:
             return None
 
-    '''
-    @staticmethod
-    def log_version(file_name, zip_name, metadata):
-    '''
-
 def update_version_zip():
     db = database()
     files_df = db.get_all(debug=1)
@@ -96,13 +97,17 @@ def update_version_zip():
     push_df = push_df.drop_duplicates(subset='file_path', keep='first')
     push_del_df = db.get_push_deleted()
     push_del_df = push_del_df.drop_duplicates(subset='file_path', keep='first')
-    #print('PUSH DF\n' + push_df.to_string())
-    #print('PUSH DELETE DF\n' + push_del_df.to_string())
+    print('PUSH DF\n' + push_df.to_string())
+    print('PUSH DELETE DF\n' + push_del_df.to_string())
 
     # Create 0 bytes files to inform the other that files were deleted
     del_files = [i for i in push_del_df['file_path'].tolist()]
     for fp in [i for i in del_files if not os.path.exists(i)]:
         print(f'create delete mock up file: {os.path.abspath(fp)}')
+        dir_name = os.path.dirname(fp)
+        if not os.path.exists(dir_name):
+            os.makedirs(dir_name, exist_ok=True)
+        os.chmod(dir_name, 0o777)
         with open(fp, 'wb') as f:
             f.close()
 
@@ -142,7 +147,7 @@ class database:
         # Read Exists
         files_rec = []
         for fp in file_path_ls:
-            if os.stat(fp).st_size <= 32:
+            if os.stat(fp).st_size <= 1:
                 os.remove(fp)
                 continue
 
@@ -160,7 +165,7 @@ class database:
 
             data = {
                 'file_path': fp.replace('\\', '/'),
-                'source': None,
+                'zip_path': None,
                 'src_name': None,
                 'base_name': os.path.basename(fp),
                 'md5_hash': get_md5_file_path(fp),
@@ -181,7 +186,7 @@ class database:
                         md5_hash = get_md5_file_obj(f)
                     data = {
                         'file_path': os.path.join(project_dir, fn).replace('\\', '/'),
-                        'source': z_fp.replace('\\', '/'),
+                        'zip_path': z_fp.replace('\\', '/'),
                         'src_name': fn.replace('\\', '/'),
                         'base_name': os.path.basename(fn),
                         'md5_hash': md5_hash,
@@ -193,14 +198,14 @@ class database:
         # DATAFRAME #------------------------------------------------------
         files_rec = sorted(files_rec, key=lambda x: (x['st_mtime'], x['file_path'], x['md5_hash']), reverse=True)
         temp_df = pd.DataFrame.from_records(files_rec)
-        temp_df['user'] = temp_df['source'].str.split('__').str[-1].str.split('.').str[0]
+        temp_df['user'] = temp_df['zip_path'].str.split('__').str[-1].str.split('.').str[0]
         temp_df['user'] = temp_df['user'].fillna(usr)
 
-        backup_df = temp_df[temp_df['source'].notna()].sort_values('st_mtime', ascending=False)
+        backup_df = temp_df[temp_df['zip_path'].notna()].sort_values('st_mtime', ascending=False)
         backup_df = backup_df.groupby('file_path', group_keys=False).head(1)
         backup_df.reset_index(drop=True, inplace=True)
 
-        local_df = temp_df[temp_df['source'].isna()].sort_values('st_mtime', ascending=False)
+        local_df = temp_df[temp_df['zip_path'].isna()].sort_values('st_mtime', ascending=False)
         local_df = local_df.groupby('file_path', group_keys=False).head(1)
         local_df.reset_index(drop=True, inplace=True)
 
@@ -208,64 +213,86 @@ class database:
         df = df.sort_values(['file_path', 'st_mtime'], ascending=[False, False])
         df.reset_index(drop=True, inplace=True)
 
-        # Sync logic #------------------------------------------------------
-        unique_grp = ['file_path', 'md5_hash', 'size_bytes']
-        max_src_mtime = df[df['source'].notnull()]['st_mtime'].max()
-        df['dup_n'] = df.groupby(unique_grp)['md5_hash'].transform('count')
-        df['zip_exists'] = df['source'].notna()
+        # SYNC LOGIC #------------------------------------------------------
+        hash_grp = ['file_path', 'md5_hash', 'size_bytes']
+        name_grp = ['file_path']
+        max_src_mtime = df[df['zip_path'].notnull()]['st_mtime'].max()
+        hash_dup_n = df.groupby(hash_grp)['md5_hash'].transform('count')
+        df['hash_similar'] = (hash_dup_n == 2)
+        name_dup_n = df.groupby(name_grp)['file_path'].transform('count')
+        df['name_similar'] = (name_dup_n == 2)
+
+        df['zip'] = df['zip_path'].notna()
         df['local_exists'] = df['file_path'].apply(os.path.exists)
+        df['is_lost'] = ~df['local_exists']
+
+        df['is_deleted'] = False
+        df.loc[(df['user'] == usr) & df['is_lost'], 'is_deleted'] = True
+
         df['is_last'] = (
                 ((df['st_mtime'] > max_src_mtime) | pd.isna(max_src_mtime)) &
-                (df['dup_n'] <= 1)
+                ~df['hash_similar'] &
+                ~df['is_deleted']
         )
-        df['is_lost'] = ~df['local_exists']
-        df['is_deleted'] = False
-        df.loc[(df['user'] == usr) & (df['is_lost']), 'is_deleted'] = True
+
+        # CONDITIONS #------------------------------------------------------
+        is_local = df['zip'] == False
+        is_remote = df['zip'] == True
+        exists_local = df['local_exists'] == True
+        lost_local = ~exists_local & is_local
+        deleted_local = df['is_deleted'] == True
+        same_file = df['hash_similar'] == True
+        different_file = ~same_file
+        is_not_zero = df['size_bytes'] > 0
+        is_zero = df['size_bytes'] == 0
 
         # PUSH #------------------------------------------------------
         df['sync_push'] = (
-                (df['is_last'] & df['local_exists']) |
-                (~df['is_last'] & df['is_deleted'] & df['local_exists'])
-       )
+                is_local & exists_local & different_file & is_not_zero
+        )
+        df['sync_push'] = df.groupby(name_grp)['sync_push'].transform('any')
 
         # PULL #------------------------------------------------------
-        df['sync_pull'] = False
-        df.loc[
-            (df['zip_exists'] & (df['dup_n'] != 2)) &
-            (df['size_bytes'] != 0),
-            'sync_pull'
-        ] = True
+        df['sync_pull'] = (
+                is_remote &
+                ~deleted_local &
+                (lost_local | different_file) &
+                is_not_zero
+        )
+        df['sync_pull'] = df.groupby(name_grp)['sync_pull'].transform('any')
 
         # PUSH DELETE #------------------------------------------------------
-        df['sync_push_delete'] =  df['is_deleted'] & ~df['zip_exists']
+        df['sync_push_delete'] = (
+                is_remote & deleted_local & is_not_zero
+        )
+        df['sync_push_delete'] = df.groupby(name_grp)['sync_push_delete'].transform('any')
 
         # PULL DELETE #------------------------------------------------------
-        df['sync_pull_delete'] = (df['size_bytes'] <= 0) & ~df['is_last']
+        df['sync_pull_delete'] = (
+                is_remote & is_zero & exists_local
+        )
+        df['sync_pull_delete'] = df.groupby(name_grp)['sync_pull_delete'].transform('any')
 
-        # print('.\n' + df.to_string())
         if debug:
-            drop_col_ls = ['file_path', 'source', 'src_name']
-            print('ALL DATA FRAME STRING\n' + df.drop(columns=drop_col_ls).to_string())
+            dbug_df = df.copy()
+            bool_cols = dbug_df.select_dtypes(include='bool').columns
+            dbug_df[bool_cols] = dbug_df[bool_cols].astype(int)
+            drop_col_ls = ['file_path', 'zip_path', 'src_name']
+            print('ALL DATA FRAME STRING\n' + dbug_df.drop(columns=drop_col_ls).to_string())
         return df
 
     def get_pull(self):
         df = self.get_all()
-        df = df[df['sync_pull']]
-        df = df[df['source'].notna()]
-        return df
+        return df[df['sync_pull'] & df['zip_path'].notna()]
 
     def get_push(self):
         df = self.get_all()
-        df = df[df['sync_push']]
-        df = df[df['local_exists']]
-        return df
+        return df[df['sync_push'] & df['local_exists']]
 
     def get_push_deleted(self):
         df = self.get_all()
-        df = df[df['sync_push_delete']]
-        return df
+        return df[df['sync_push_delete']]
 
     def get_pull_deleted(self):
         df = self.get_all()
-        df = df[df['sync_pull_delete']]
-        return df
+        return df[df['sync_pull_delete']]

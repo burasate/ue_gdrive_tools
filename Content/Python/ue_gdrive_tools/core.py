@@ -17,7 +17,10 @@ gdrive = None
 
 pycache_dirs = glob.glob(os.path.join(base_dir, "**", "__pycache__"), recursive=True)
 for path in pycache_dirs:
-    shutil.rmtree(path)
+    try:
+        shutil.rmtree(path)
+    except:
+        pass
 
 class editor_utils:
     editor_load_save_util = unreal.EditorLoadingAndSavingUtils
@@ -79,7 +82,9 @@ def _commit_new_version():
     :return:
     '''
     print('.\n--------\nCommit_new_version\n--------\n')
-    editor_utils.save_all_with_dialog()
+    if editor_utils.get_dirty_list():
+        editor_utils.save_all_with_dialog()
+
     zip_path = ver_utils.update_version_zip()
     if not zip_path:
         return
@@ -128,21 +133,32 @@ def _get_package_update():
     print('.\n--------\nGet_package_update\n--------\n')
     fetch_all_versions()
     db = ver_utils.database()
-    db.get_all(debug=1)
     pull_df = db.get_pull()
+    pull_del_df = db.get_pull_deleted()
+
     ver_utils.log_file.delete_pull_version()
-    if not pull_df.index.tolist():
+    if not pull_df.index.tolist() and not pull_del_df.index.tolist():
+        _commit_new_version()
         print('.\n--------\nProject: Already Up to Date!\n--------\n')
         return
     else:
         print('.\n--------\nProject: Found new modified, About to reload UEditor.\n--------\n')
+
         for i in pull_df.index.tolist():
             row = pull_df.loc[i]
-            zip_path = row['source']
+            zip_path = row['zip_path']
+            if not row['zip_path']: continue
             sub_path = row['src_name']
+            print(f'> Add pull update task: {sub_path}')
+            log_pull = ver_utils.log_file.pull_version(zip_path, sub_path, 1)
 
-            print(f'Add pull version task: {sub_path}')
-            log_pull = ver_utils.log_file.pull_version(zip_path, sub_path)
+        for i in pull_del_df.index.tolist():
+            row = pull_del_df.loc[i]
+            zip_path = row['zip_path']
+            if not row['zip_path']: continue
+            sub_path = row['src_name']
+            print(f'> Add pull delete task: {sub_path}')
+            log_pull = ver_utils.log_file.pull_version(zip_path, sub_path, 0)
 
         ed = unreal.EditorDialog.show_message(
             title="Confirm Action",
@@ -158,11 +174,8 @@ def save():
     _commit_new_version()
 
 def load():
-    if editor_utils.get_dirty_list():
-        _commit_new_version()
-    else:
-        _get_package_update()
+    _get_package_update()
 
 def run(): # Dev test
+    save()
     load()
-

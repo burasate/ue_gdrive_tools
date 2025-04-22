@@ -46,6 +46,29 @@ class zip_util:
                 zf.write(file, arcname)
         print(f"Created zip file: {zip_name}")
 
+class file_util:
+    @staticmethod
+    def remove_file(file_path):
+        try:
+            print(f"Romoving file: {file_path}")
+            os.remove(file_path)
+        except:
+            import traceback
+            print(f"Unable to remove file: {file_path}, Skip.")
+            print(traceback.format_exc())
+
+    @staticmethod
+    def remove_empty_dirs(path):
+        if not os.path.exists(path):
+            return
+        for root, dirs, files in os.walk(path, topdown=False):
+            if not files and not dirs:
+                try:
+                    os.rmdir(root)
+                    print(f"Removed empty directory: {root}")
+                except OSError as e:
+                    print(f"Could not remove {root}: {e}")
+
 #---------------------------------------------------------------------------------
 def main(argv=None):
     """Commandline interface."""
@@ -62,16 +85,23 @@ def main(argv=None):
 
     if args.command == "restart":
         print('\n=========\nRESTART PROJECT WITH SYNC\n=========\n')
-        time.sleep(12)
+        time.sleep(15)
         project_dir = os.path.dirname(args.project_path)
         with open(args.file_path) as f:
             rec = json.load(f)
             f.close()
-        for zip_path, zip_src_path in rec:
-            zip_util.zip_extract_file(zip_path, zip_src_path, project_dir)
+        for zip_path, zip_src_path, mode in rec:
+            if not zip_path:
+                continue
+            if mode == 0:
+                file_path = os.path.join(project_dir, zip_src_path)
+                file_util.remove_file(file_path)
+            if mode == 1:
+                zip_util.zip_extract_file(zip_path, zip_src_path, project_dir)
+        file_util.remove_empty_dirs(os.path.join(project_dir, 'Content'))
         os.remove(args.file_path)
         print('\nStarting new editor window....')
-        time.sleep(5)
+        time.sleep(1)
         unreal_engine.start(args.ueditor_path, args.project_path)
 
 #---------------------------------------------------------------------------------
