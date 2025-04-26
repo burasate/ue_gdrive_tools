@@ -90,15 +90,15 @@ class log_file:
 
 def update_version_zip():
     db = database()
-    files_df = db.get_all(debug=1)
+    files_df = db.get_all(debug=0)
     #print('ALL DF\n' + files_df.to_string())
 
     push_df = db.get_push()
     push_df = push_df.drop_duplicates(subset='file_path', keep='first')
     push_del_df = db.get_push_deleted()
     push_del_df = push_del_df.drop_duplicates(subset='file_path', keep='first')
-    print('PUSH DF\n' + push_df.to_string())
-    print('PUSH DELETE DF\n' + push_del_df.to_string())
+    #print('PUSH DF\n' + push_df.to_string())
+    #print('PUSH DELETE DF\n' + push_del_df.to_string())
 
     # Create 0 bytes files to inform the other that files were deleted
     del_files = [i for i in push_del_df['file_path'].tolist()]

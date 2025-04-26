@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
+__version__ = '0.1.0 alpha'
+
 import json, os, sys, time, subprocess, glob, shutil
 from importlib import reload
 import unreal
 
 from . import gd_utils
 from . import ver_utils
+from . import menu
 from . import config
 reload(gd_utils)
 reload(ver_utils)
@@ -21,6 +24,18 @@ for path in pycache_dirs:
         shutil.rmtree(path)
     except:
         pass
+
+if __name__ != '__main__':
+    print('.\nStarting...\n' + ''''
+
+  _   _ _____     ____ ____  ____  _____     _______   _____ ___   ___  _     ____  
+ | | | | ____|   / ___|  _ \|  _ \|_ _\ \   / / ____| |_   _/ _ \ / _ \| |   / ___| 
+ | | | |  _|    | |  _| | | | |_) || | \ \ / /|  _|     | || | | | | | | |   \___ \ 
+ | |_| | |___   | |_| | |_| |  _ < | |  \ V / | |___    | || |_| | |_| | |___ ___) |
+  \___/|_____|   \____|____/|_| \_\___|  \_/  |_____|   |_| \___/ \___/|_____|____/ 
+                                                                                    
+                                                                                    
+    ''')
 
 class editor_utils:
     editor_load_save_util = unreal.EditorLoadingAndSavingUtils
@@ -75,7 +90,6 @@ class editor_utils:
     @staticmethod
     def save_all():
         editor_utils.editor_load_save_util.save_dirty_packages_with_dialog(True, True)
-
 
 def _commit_new_version():
     '''
@@ -139,7 +153,7 @@ def _get_package_update():
     ver_utils.log_file.delete_pull_version()
     if not pull_df.index.tolist() and not pull_del_df.index.tolist():
         _commit_new_version()
-        print('.\n--------\nProject: Already Up to Date!\n--------\n')
+        print('.\n--------\nProject: All assets have already Up to Date!\n--------\n')
         return
     else:
         print('.\n--------\nProject: Found new modified, About to reload UEditor.\n--------\n')
@@ -176,6 +190,11 @@ def save():
 def load():
     _get_package_update()
 
-def run(): # Dev test
-    save()
-    load()
+def sync():
+    _commit_new_version()
+    _get_package_update()
+
+def init_tool_menus():
+    ui = menu.UI()
+    ui._clear_sub_menu()
+    ui._create_tool_menus()

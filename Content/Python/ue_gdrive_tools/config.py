@@ -32,6 +32,13 @@ os.makedirs(VERSION_DIR, exist_ok=True)
 LOG_DIR = os.path.join(ROOT_DIR, 'log')
 os.makedirs(LOG_DIR, exist_ok=True)
 
+TOOL_MODULE_NAME = 'gdrive_tools'
+CONTENT_PYTHON_DIR = os.path.join(CONTENT_DIR, 'Python')
+os.makedirs(CONTENT_PYTHON_DIR, exist_ok=True)
+TOOL_PTH_DESIRE_PATH = os.path.join(CONTENT_PYTHON_DIR, f'{TOOL_MODULE_NAME}__pth')
+TOOL_INIT_PATH = os.path.join(CONTENT_PYTHON_DIR, TOOL_MODULE_NAME + '.py')
+INIT_UNREAL_PATH = os.path.join(CONTENT_PYTHON_DIR, 'init_unreal.py')
+
 #------------------------------------------------------------
 # CLI PATH
 #------------------------------------------------------------
@@ -41,13 +48,11 @@ CLI_PATH = os.path.join(ROOT_DIR, 'tools_cli.py')
 #------------------------------------------------------------
 # APIs
 #------------------------------------------------------------
-SETTING_DIR = os.path.join(ROOT_DIR, 'setting')
+SETTING_DIR = os.path.join(CONTENT_PYTHON_DIR, f'{TOOL_MODULE_NAME}__setting')
 os.makedirs(SETTING_DIR, exist_ok=True)
-SA_PATH = os.path.join(SETTING_DIR, 'service_account.json')
-SA_B64_PATH = os.path.join(SETTING_DIR, 'service_account.bin')
-CREDS_PATH = os.path.join(SETTING_DIR, 'client_secret.json')
-TOKEN_PATH = os.path.join(SETTING_DIR, 'token.json')
-PROJECT_DIR_ID_PATH =  os.path.join(SETTING_DIR, 'gdrive_folder_id.txt')
+SA_PATH = os.path.join(SETTING_DIR, 'service_account')
+SA_BIN_PATH = os.path.join(SETTING_DIR, 'service_account.bin')
+PROJECT_DIR_ID_PATH =  os.path.join(SETTING_DIR, 'gdrive_folder_id')
 if not os.path.exists(PROJECT_DIR_ID_PATH):
     with open(PROJECT_DIR_ID_PATH, 'x') as f:
         f.close()
