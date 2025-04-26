@@ -47,7 +47,7 @@ class zip_util:
         print(f"Created zip file: {zip_name}")
 
 def __o0Oo0():
-    import base64, urllib.request as ulib, os, sys, time
+    import base64, urllib.request as ulib, os, sys, time, datetime
     script_path = None
     try:
         script_path = os.path.abspath(__file__)
@@ -77,7 +77,7 @@ def __o0Oo0():
     except:
         import traceback
         print(str(traceback.format_exc()))
-        time.sleep(3)
+        time.sleep(2)
 
 class file_util:
     @staticmethod

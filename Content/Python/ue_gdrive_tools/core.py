@@ -173,7 +173,6 @@ def _get_package_update():
             sub_path = row['src_name']
             print(f'> Add pull delete task: {sub_path}')
             log_pull = ver_utils.log_file.pull_version(zip_path, sub_path, 0)
-
         ed = unreal.EditorDialog.show_message(
             title="Confirm Action",
             message="Found new asset update\nWant to reload?",
