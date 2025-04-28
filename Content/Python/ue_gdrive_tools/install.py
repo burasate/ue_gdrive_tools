@@ -61,8 +61,6 @@ with open(os.path.join(os.path.dirname(__file__), \'{0}.py\')) as f:
         with open(config.INIT_UNREAL_PATH, 'w') as f:
             f.write(cmd)
 
-#globals()[module_name] = __import__(module_name)
-
 def run_install(*_):
     # call pip install
     r = subprocess.run([python_path, "-m", "pip", 'install', "-r", pip_requirements_path], capture_output=True)
