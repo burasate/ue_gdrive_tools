@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 *.ini
 *.umap
-*.uasset
 *.uproject
 *.fbx
 *.zip
@@ -14,3 +13,4 @@ Intermediate/
 Import/
 Saved/
 Config/
+Content/Main_BuiltData.uasset
