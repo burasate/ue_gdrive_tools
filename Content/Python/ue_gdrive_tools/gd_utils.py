@@ -28,7 +28,8 @@ class drive_handler:
     def authenticate(self):
         import base64, json
         if not os.path.exists(config.SA_BIN_PATH):
-            assert os.path.exists(config.SA_PATH), f'.\n--------\nPlease create service account and place it into..\n{config.SA_PATH}\n--------\n'
+            assert (os.path.exists(config.SA_PATH) and os.path.exists(config.SA_BIN_PATH)
+                    ), f'.\n--------\nPlease create service account and place it into..\n{config.SA_PATH}\n--------\n'
             with open(config.SA_PATH, 'rb') as f:
                 raw_data = f.read()
                 b64_data = base64.b64encode(raw_data)

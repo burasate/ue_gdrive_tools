@@ -130,7 +130,6 @@ def update_version_zip():
         return None
 
 class database:
-    #print('DATA FRAME STRING\n' + files_df.to_string())
     def get_all(self, debug=False):
         import unreal
         editor_asset_library = unreal.EditorAssetLibrary()

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-__version__ = '0.1.0 alpha'
+__version__ = '0.1.1 alpha'
 
 import json, os, sys, time, subprocess, glob, shutil
 from importlib import reload
