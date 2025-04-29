@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "UEGDriveTool",
+	"Description": "GDrive Sync system for small project",
+	"Category": "Other",
+	"CreatedBy": "Dex3D",
+	"CreatedByURL": "https://dex3d.gumroad.com/",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": true,
+	"IsExperimentalVersion": false,
+	"Installed": false
+}
