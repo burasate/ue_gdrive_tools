@@ -22,15 +22,15 @@ version_dir = config.VERSION_DIR
 '''--------------------'''
 # Func
 '''--------------------'''
-def get_md5_file_path(file_path):
-    hash_md5 = hashlib.md5()
+def get_hash_file_path(file_path):
+    hash_md5 = hashlib.sha256()
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
-def get_md5_file_obj(file_obj):
-    hash_md5 = hashlib.md5()
+def get_hash_file_obj(file_obj):
+    hash_md5 = hashlib.sha256()
     for chunk in iter(lambda: file_obj.read(4096), b""):
         hash_md5.update(chunk)
     return hash_md5.hexdigest()
@@ -167,7 +167,7 @@ class database:
                 'zip_path': None,
                 'src_name': None,
                 'base_name': os.path.basename(fp),
-                'md5_hash': get_md5_file_path(fp),
+                'md5_hash': get_hash_file_path(fp),
                 'st_mtime': int(os.stat(fp).st_mtime),
                 'size_bytes': os.stat(fp).st_size
             }
@@ -182,7 +182,7 @@ class database:
                     dt = datetime(*info.date_time)
                     dt_utc = dt.replace(tzinfo=timezone.utc)
                     with zip_ref.open(fn) as f:
-                        md5_hash = get_md5_file_obj(f)
+                        md5_hash = get_hash_file_obj(f)
                     data = {
                         'file_path': os.path.join(project_dir, fn).replace('\\', '/'),
                         'zip_path': z_fp.replace('\\', '/'),
