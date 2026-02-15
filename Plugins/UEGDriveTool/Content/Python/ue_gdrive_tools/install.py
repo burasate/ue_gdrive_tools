@@ -11,9 +11,15 @@ tool_dir = config.ROOT_DIR
 pip_requirements_path = tool_dir + os.sep + 'requirements.txt'
 assert os.path.exists(pip_requirements_path)
 
+'''
+import ue_gdrive_tools.core as ugdrive
+ugdrive.init_tool_menus()
+'''
+
 def _create_tool_python(*_):
     cmd = '''
 import sys, os, builtins, importlib
+import unreal
 
 ### Environment ###
 with open(\'{2}\') as f:
@@ -21,12 +27,8 @@ with open(\'{2}\') as f:
 if not \'{0}\' in sys.path:
     sys.path.insert(0, \'{0}\')
 
-module_name = '{1}.core'
-if module_name in sys.modules:
-    ugdrive = importlib.reload(sys.modules[module_name])
-else:
-    ugdrive = importlib.import_module(module_name)
-
+module_name = \'{1}.core\'
+ugdrive = importlib.import_module(module_name)
 builtins.ugdrive = ugdrive
 ugdrive.init_tool_menus()
 '''.strip().format(
@@ -39,31 +41,37 @@ ugdrive.init_tool_menus()
         f.write(cmd)
 
 def _create_init_unreal():
-    cmd = '''
+    cmd = """
+# ------------------------------- 
+# gDrive Tools Starting up 
 # -------------------------------
-# gDrive Tools Starting up
-# -------------------------------
+import unreal
 import os
-with open(os.path.join(os.path.dirname(__file__), \'{0}.py\')) as f:
-    exec(f.read())
-# -------------------------------
-'''.strip().format(
+
+tools_dir = os.path.dirname(__file__)
+tool_path = os.path.join(tools_dir, \"{0}.py\")
+install_path = os.path.join(tools_dir, \"ue_{0}\", "install.py")
+
+editor_subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+editor_world = editor_subsystem.get_editor_world()
+
+if os.path.exists(tool_path):
+    cmd = 'py ' + tool_path
+else:
+    cmd = 'py ' + install_path
+unreal.SystemLibrary.execute_console_command(editor_world, cmd)
+""".strip().format(
         config.TOOL_MODULE_NAME
     )
-
-    if os.path.exists(config.INIT_UNREAL_PATH):
-        with open(config.INIT_UNREAL_PATH) as f:
-            f_read = f.read()
-        with open(config.INIT_UNREAL_PATH, 'a') as f:
-            if not cmd in f_read:
-                f.write('\n' + cmd + '\n')
-    else:
-        with open(config.INIT_UNREAL_PATH, 'w') as f:
+    with open(config.INIT_UNREAL_PATH, 'w') as f:
             f.write(cmd)
 
 def run_install(*_):
     # call pip install
-    r = subprocess.run([python_path, "-m", "pip", 'install', "-r", pip_requirements_path], capture_output=True)
+    #r = subprocess.run([python_path, "-m", "pip", 'install', "-r", pip_requirements_path], capture_output=True)
+    r = subprocess.run(
+        [python_path, "-m", "pip", "install", "--force-reinstall", "-r", pip_requirements_path],
+        capture_output=True)
     #print(r.stdout.decode())
 
     # call module list
