@@ -1,17 +1,17 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "1.0",
+	"VersionName": "0.1.2",
 	"FriendlyName": "UEGDriveTool",
 	"Description": "GDrive Sync system for small project",
 	"Category": "Other",
 	"CreatedBy": "Dex3D",
 	"CreatedByURL": "https://dex3d.gumroad.com/",
-	"DocsURL": "",
-	"MarketplaceURL": "",
+	"DocsURL": "https://brsanim.notion.site/UE-GDrive-Tools-1dd721218164807abec1f65c49086311",
+	"MarketplaceURL": "https://www.fab.com/portal/listings/6d91ee0c-6432-4fd4-b803-182e561d7499/",
 	"SupportURL": "",
 	"CanContainContent": true,
-	"IsBetaVersion": true,
+	"IsBetaVersion": false,
 	"IsExperimentalVersion": false,
 	"Installed": false
 }

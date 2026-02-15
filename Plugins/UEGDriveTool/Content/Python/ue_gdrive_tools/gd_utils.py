@@ -28,8 +28,16 @@ class drive_handler:
     def authenticate(self):
         import base64, json
         if not os.path.exists(config.SA_BIN_PATH):
-            assert (os.path.exists(config.SA_PATH) and os.path.exists(config.SA_BIN_PATH)
-                    ), f'.\n--------\nPlease create service account and place it into..\n{config.SA_PATH}\n--------\n'
+            if not os.path.exists(config.SA_PATH):
+                unreal = config.unreal
+                unreal.EditorDialog.show_message(
+                    title="No Service Account File",
+                    message=f'.\n--------\nPlease create service account and place it into..\n{config.SA_PATH}\n--------\n',
+                    message_type=unreal.AppMsgType.OK,
+                    default_value=unreal.AppReturnType.OK
+                )
+                return
+
             with open(config.SA_PATH, 'rb') as f:
                 raw_data = f.read()
                 b64_data = base64.b64encode(raw_data)
@@ -72,7 +80,7 @@ class drive_handler:
 
     def upload_file(self, file_path, folder_id):
         file_name = os.path.basename(file_path)
-        media = MediaFileUpload(file_path, mimetype='application/octet-stream')
+        media = MediaFileUpload(file_path, mimetype='application/octet-stream', resumable=True, chunksize=256*1024*1024)
         file_metadata = {'name': file_name, 'parents': [folder_id]}
         file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
         print(f"File uploaded: {file['id']}")
@@ -114,7 +122,7 @@ class drive_handler:
                 print(f"Failed to empty trash: {e}")
 
             # Recheck storage
-            about = service.about().get(fields="storageQuota").execute()
+            about = self.service.about().get(fields="storageQuota").execute()
             usage = int(about.get('storageQuota', {}).get('usage', 0))
 
             if usage < limit * usage_limit_ratio:
