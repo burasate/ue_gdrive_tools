@@ -3,17 +3,22 @@
 Thanks to original template
 https://docs.google.com/document/d/18jIG5p6PRiO7qe8QgiFGQYnaRLKY-YyAYqZ0_hsOjFk/
 '''
-import unreal, sys
+import unreal
+
 
 class UI:
+    ENTRY_OWNER = 'BRS_UE'
+    OWNING_MENU_NAME = '.'.join(['LevelEditor', 'LevelEditorToolBar', 'User'])
+    TOOLBAR_ENTRY_NAME = 'syncDriveToolbarEntry'
+    SUBMENU_NAME = f"{OWNING_MENU_NAME}.{TOOLBAR_ENTRY_NAME}"
+
     def __init__(self):
-        self.entry_owner = 'BRS_UE'
-        self.owning_menu_name = '.'.join(['LevelEditor', 'LevelEditorToolBar', 'User'])  # Parent to
-        self.toolbar_entry_name = 'syncDriveToolbarEntry'
-        self.submenu_name = f"{self.owning_menu_name}.{self.toolbar_entry_name}"
+        self.entry_owner = self.ENTRY_OWNER
+        self.owning_menu_name = self.OWNING_MENU_NAME
+        self.toolbar_entry_name = self.TOOLBAR_ENTRY_NAME
+        self.submenu_name = self.SUBMENU_NAME
         self.get_tool_menus()
 
-        # Define Sync Drive menu entries
         self.menu_entries = [
             (
                 "RunSyncFunction",
@@ -53,11 +58,8 @@ class UI:
     def _clear_sub_menu(self):
         self.get_tool_menus()
         sub_menu = self.tool_menus.find_menu(self.submenu_name)
-        if not sub_menu:
-            return
-
-        # Refresh UI
-        self.tool_menus.refresh_all_widgets()
+        if sub_menu:
+            self.tool_menus.refresh_all_widgets()
 
     def _create_tool_menus(self):
         # Create Sync Drive button entry
@@ -113,14 +115,13 @@ class UI:
 @unreal.uclass()
 class SyncDrive_SubMenuEntry(unreal.ToolMenuEntryScript):
     def init_as_toolbar_button(self):
-        global UI
-        self.data.menu = UI().owning_menu_name
+        self.data.menu = UI.OWNING_MENU_NAME
         self.data.advanced.entry_type = unreal.MultiBlockType.TOOL_BAR_COMBO_BUTTON
         self.data.icon = unreal.ScriptSlateIcon("EditorStyle", "Subversion.Branched")
         self.data.advanced.style_name_override = "CalloutToolbar"
 
 if __name__ == '__main__':
-    um = ui_menu()
+    um = UI()
     um._clear_sub_menu()
     um._create_tool_menus()
 

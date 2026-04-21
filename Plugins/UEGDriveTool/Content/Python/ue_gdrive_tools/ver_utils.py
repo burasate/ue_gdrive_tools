@@ -130,190 +130,220 @@ def update_version_zip():
         return None
 
 class database:
-    def get_all(self, debug=False):
-        import unreal
-        editor_asset_library = unreal.EditorAssetLibrary()
-        asset_tools = unreal.AssetToolsHelpers().get_asset_tools()
-        usr = getpass.getuser().lower()
+    ACTION_NOOP = 'noop'
+    ACTION_PUSH = 'push'
+    ACTION_PULL = 'pull'
+    ACTION_PUSH_DELETE = 'push_delete'
+    ACTION_PULL_DELETE = 'pull_delete'
 
-        # Files
+    def __init__(self):
+        self._cache_df = None
+
+    @staticmethod
+    def _is_tracked_path(path):
+        return os.path.splitext(path)[1].lstrip('.').lower() in config.EXTENSION_LS
+
+    @staticmethod
+    def _parse_zip_metadata(zip_path):
+        zip_name = os.path.splitext(os.path.basename(zip_path))[0]
+        parts = zip_name.split('__', 1)
+        ts_part = parts[0]
+        user = parts[1].lower() if len(parts) > 1 and parts[1] else None
+        try:
+            commit_ts = int(datetime.strptime(ts_part, '%Y%m%d_%H%M%S').timestamp())
+        except Exception:
+            commit_ts = int(os.stat(zip_path).st_mtime)
+        return commit_ts, user
+
+    @staticmethod
+    def _remote_record_is_newer(candidate, current):
+        if current is None:
+            return True
+        candidate_key = (candidate['remote_commit_ts'], candidate['zip_path'])
+        current_key = (current['remote_commit_ts'], current['zip_path'])
+        return candidate_key > current_key
+
+    @staticmethod
+    def _empty_df():
+        return pl.DataFrame({
+            'file_path': pl.Series('file_path', [], dtype=pl.Utf8),
+            'base_name': pl.Series('base_name', [], dtype=pl.Utf8),
+            'local_exists': pl.Series('local_exists', [], dtype=pl.Boolean),
+            'local_hash': pl.Series('local_hash', [], dtype=pl.Utf8),
+            'local_st_mtime': pl.Series('local_st_mtime', [], dtype=pl.Int64),
+            'local_size_bytes': pl.Series('local_size_bytes', [], dtype=pl.Int64),
+            'zip_path': pl.Series('zip_path', [], dtype=pl.Utf8),
+            'src_name': pl.Series('src_name', [], dtype=pl.Utf8),
+            'remote_hash': pl.Series('remote_hash', [], dtype=pl.Utf8),
+            'remote_commit_ts': pl.Series('remote_commit_ts', [], dtype=pl.Int64),
+            'remote_size_bytes': pl.Series('remote_size_bytes', [], dtype=pl.Int64),
+            'user': pl.Series('user', [], dtype=pl.Utf8),
+            'remote_is_tombstone': pl.Series('remote_is_tombstone', [], dtype=pl.Boolean),
+            'same_hash': pl.Series('same_hash', [], dtype=pl.Boolean),
+            'sync_action': pl.Series('sync_action', [], dtype=pl.Utf8),
+            'sync_reason': pl.Series('sync_reason', [], dtype=pl.Utf8),
+        })
+
+    def _scan_local_assets(self):
+        import unreal
+
+        editor_asset_library = unreal.EditorAssetLibrary()
+        local_assets = {}
         file_path_ls = glob.glob(os.path.join(content_dir, '**', '*'), recursive=True)
         file_path_ls = [fp.replace('\\', '/') for fp in file_path_ls if os.path.isfile(fp)]
-        ext_ls = [os.path.basename(i).split('.')[-1] for i in file_path_ls]
-        file_path_ls = [file_path_ls[i] for i in range(len(file_path_ls)) if ext_ls[i] in config.EXTENSION_LS]
-        assert len(file_path_ls) >= 2, 'File count less than 2'
+        file_path_ls = [fp for fp in file_path_ls if self._is_tracked_path(fp)]
 
-        # Read Exists
-        files_rec = []
         for fp in file_path_ls:
-            if os.stat(fp).st_size <= 1:
-                os.remove(fp)
+            stat = os.stat(fp)
+            if stat.st_size <= 1:
                 continue
 
-            name, ext = os.path.basename(fp).split('.')[0], os.path.basename(fp).split('.')[-1]
+            name = os.path.splitext(os.path.basename(fp))[0]
             asset_path = os.path.abspath(fp).replace(os.path.abspath(content_dir), '')
             asset_path = '/Game' + asset_path.replace('\\', '/')
             package_name = os.path.dirname(asset_path) + f'/{name}'
-            asset = editor_asset_library.load_asset(package_name)
-            asset_data = editor_asset_library.find_asset_data(package_name)
-            if asset_data.asset_name and asset_data.is_redirector():
-                editor_asset_library.delete_asset(package_name)
-                continue
-            # if not asset_data.is_valid():
-            # continue
 
-            data = {
-                'file_path': fp.replace('\\', '/'),
-                'zip_path': None,
-                'src_name': None,
+            try:
+                asset_data = editor_asset_library.find_asset_data(package_name)
+                if asset_data.asset_name and asset_data.is_redirector():
+                    continue
+            except Exception:
+                pass
+
+            local_assets[fp] = {
+                'file_path': fp,
                 'base_name': os.path.basename(fp),
-                'md5_hash': get_hash_file_path(fp),
-                'st_mtime': int(os.stat(fp).st_mtime),
-                'size_bytes': os.stat(fp).st_size
+                'local_hash': get_hash_file_path(fp),
+                'local_st_mtime': int(stat.st_mtime),
+                'local_size_bytes': int(stat.st_size),
             }
-            files_rec.append(data)
+        return local_assets
 
-        # read backup
+    def _scan_remote_heads(self, current_user):
+        remote_heads = {}
         zip_path_ls = sorted(glob.glob(f'{version_dir}/*.zip'))
         for z_fp in zip_path_ls:
+            commit_ts, parsed_user = self._parse_zip_metadata(z_fp)
+            remote_user = parsed_user or current_user
             with zipfile.ZipFile(z_fp, 'r') as zip_ref:
                 for info in zip_ref.infolist():
-                    fn = info.filename
-                    dt = datetime(*info.date_time)
-                    dt_utc = dt.replace(tzinfo=timezone.utc)
-                    with zip_ref.open(fn) as f:
-                        md5_hash = get_hash_file_obj(f)
-                    data = {
-                        'file_path': os.path.join(project_dir, fn).replace('\\', '/'),
-                        'zip_path': z_fp.replace('\\', '/'),
-                        'src_name': fn.replace('\\', '/'),
+                    fn = info.filename.replace('\\', '/')
+                    if fn.endswith('/') or not self._is_tracked_path(fn):
+                        continue
+
+                    file_path = os.path.join(project_dir, fn).replace('\\', '/')
+                    with zip_ref.open(info.filename) as f:
+                        remote_hash = get_hash_file_obj(f)
+
+                    candidate = {
+                        'file_path': file_path,
                         'base_name': os.path.basename(fn),
-                        'md5_hash': md5_hash,
-                        'st_mtime': int(os.stat(z_fp).st_mtime),
-                        'size_bytes': info.file_size
+                        'zip_path': z_fp.replace('\\', '/'),
+                        'src_name': fn,
+                        'remote_hash': remote_hash,
+                        'remote_commit_ts': commit_ts,
+                        'remote_size_bytes': int(info.file_size),
+                        'remote_is_tombstone': int(info.file_size) == 0,
+                        'user': remote_user,
                     }
-                    files_rec.append(data)
+                    current = remote_heads.get(file_path)
+                    if self._remote_record_is_newer(candidate, current):
+                        remote_heads[file_path] = candidate
+        return remote_heads
 
-        # DATAFRAME #------------------------------------------------------
-        files_rec = sorted(files_rec, key=lambda x: (x['st_mtime'], x['file_path'], x['md5_hash']), reverse=True)
-        temp_df = pl.DataFrame(files_rec)
-        #temp_df = temp_df.with_columns(temp_df['zip_path'].str.split('__').list.get(-1).str.split('.').list.get(0).alias('user'))
-        temp_df = temp_df.with_columns(
-        pl.col("zip_path").cast(pl.Utf8)
-        .str.split("__").list.get(-1)
-        .str.split(".").list.get(0)
-        .alias("user"))   
-        temp_df = temp_df.with_columns(pl.col('user').fill_null(usr))
+    def _decide_action(self, local_rec, remote_rec, current_user):
+        if local_rec and not remote_rec:
+            return self.ACTION_PUSH, 'local_only'
 
-        backup_df = (temp_df.filter(pl.col('zip_path').is_not_null()).sort('st_mtime', descending=True))
-        backup_df = backup_df.sort('st_mtime', descending=True).unique(subset='file_path', keep='first')
-        #backup_df = backup_df.drop('index').with_row_count(name='index')
+        if not local_rec and not remote_rec:
+            return self.ACTION_NOOP, 'missing_both'
 
-        local_df = (temp_df.filter(pl.col('zip_path').is_null()).sort('st_mtime', descending=True))
-        local_df = local_df.sort('st_mtime', descending=True).unique(subset='file_path', keep='first')
-        #local_df = local_df.drop('index').with_row_count(name='index')
+        if not local_rec and remote_rec:
+            if remote_rec['remote_is_tombstone']:
+                return self.ACTION_NOOP, 'remote_tombstone_only'
+            if remote_rec['user'] == current_user:
+                return self.ACTION_PUSH_DELETE, 'local_missing_remote_owned_by_current_user'
+            return self.ACTION_PULL, 'local_missing_remote_exists'
 
-        df = pl.concat([local_df, backup_df])
-        df = df.sort(['file_path', 'st_mtime'], descending=[True, True])
-        #df = df.drop('index').with_row_count(name='index')
+        if local_rec and remote_rec['remote_is_tombstone']:
+            if remote_rec['remote_commit_ts'] >= local_rec['local_st_mtime']:
+                return self.ACTION_PULL_DELETE, 'remote_tombstone_newer'
+            return self.ACTION_PUSH, 'local_restores_remote_tombstone'
 
-        # SYNC LOGIC #------------------------------------------------------
-        hash_grp = ['file_path', 'md5_hash', 'size_bytes']
-        name_grp = ['file_path']
-        max_src_mtime = df.filter(pl.col('zip_path').is_not_null())['st_mtime'].max()
-        hash_dup_n = df.select(pl.count('md5_hash').over(hash_grp).alias('hash_dup_n'))['hash_dup_n']
-        df = df.with_columns((hash_dup_n >= 2).alias('hash_similar'))
-        name_dup_n = df.select(pl.count('file_path').over(name_grp).alias('name_dup_n'))['name_dup_n']
-        df = df.with_columns((name_dup_n >= 2).alias('name_similar'))
-
-        df = df.with_columns(pl.col('zip_path').is_not_null().alias('zip'))
-        df = df.with_columns(pl.Series('local_exists', [os.path.exists(p) for p in df['file_path']]))
-        df = df.with_columns((~pl.col('local_exists')).alias('is_lost'))
-
-        df = df.with_columns(((pl.col('user') == usr) & pl.col('is_lost')).alias('is_deleted'))
-
-        local_latest = (
-            df.filter(~pl.col('zip'))
-            .sort(['file_path', 'st_mtime'], descending=[False, True])
-            .unique(subset='file_path', keep='first')
-            .select(['file_path', 'st_mtime'])
-            .rename({'st_mtime': 'local_st_mtime'})
+        same_hash = (
+            local_rec['local_hash'] == remote_rec['remote_hash']
+            and local_rec['local_size_bytes'] == remote_rec['remote_size_bytes']
         )
-        df = df.join(local_latest, on='file_path', how='left')
+        if same_hash:
+            return self.ACTION_NOOP, 'matching_hash'
 
-        df = df.with_columns(
-            (
-                    (pl.col('st_mtime') == pl.col('local_st_mtime')) &
-                    (pl.col('size_bytes') > 0) &
-                    ~pl.col('is_deleted') &
-                    (pl.col('hash_similar') == False)
-            ).alias('is_last')
-        )
+        local_ts = local_rec['local_st_mtime']
+        remote_ts = remote_rec['remote_commit_ts']
+        if local_ts >= remote_ts:
+            reason = 'local_newer' if local_ts > remote_ts else 'local_tie_break'
+            return self.ACTION_PUSH, reason
+        return self.ACTION_PULL, 'remote_newer'
 
-        # CONDITIONS #------------------------------------------------------
-        is_owner = pl.col('user') == usr
-        is_local = ~pl.col('zip') & is_owner
-        is_remote = pl.col('zip')
-        exists_local = pl.col('local_exists')
-        lost_local = ~exists_local & is_local
-        deleted_local = pl.col('is_deleted')
-        same_file = pl.col('hash_similar')
-        different_file = ~same_file
-        is_not_zero = pl.col('size_bytes') > 0
-        is_zero = pl.col('size_bytes') == 0
-        remote_is_newer = pl.col('st_mtime') > pl.col('local_st_mtime')
+    def _build_all(self):
+        usr = getpass.getuser().lower()
+        local_assets = self._scan_local_assets()
+        remote_heads = self._scan_remote_heads(usr)
+        all_paths = sorted(set(local_assets) | set(remote_heads))
 
-        # PUSH #------------------------------------------------------
-        df = df.with_columns(
-            (is_local & exists_local & different_file & is_not_zero).alias('sync_push')
-        )
-        df = df.with_columns(pl.col('sync_push').any().over(name_grp).alias('sync_push'))
+        if not all_paths:
+            return self._empty_df()
 
-        # PULL #------------------------------------------------------
-        df = df.with_columns(
-            (is_remote & (~deleted_local) & (lost_local | different_file) & is_not_zero).alias('sync_pull')
-        )
-        df = df.with_columns(pl.col('sync_pull').any().over(name_grp).alias('sync_pull'))
+        records = []
+        for file_path in all_paths:
+            local_rec = local_assets.get(file_path)
+            remote_rec = remote_heads.get(file_path)
+            sync_action, sync_reason = self._decide_action(local_rec, remote_rec, usr)
+            same_hash = bool(
+                local_rec and remote_rec
+                and not remote_rec['remote_is_tombstone']
+                and local_rec['local_hash'] == remote_rec['remote_hash']
+                and local_rec['local_size_bytes'] == remote_rec['remote_size_bytes']
+            )
+            records.append({
+                'file_path': file_path,
+                'base_name': os.path.basename(file_path),
+                'local_exists': local_rec is not None,
+                'local_hash': None if not local_rec else local_rec['local_hash'],
+                'local_st_mtime': None if not local_rec else local_rec['local_st_mtime'],
+                'local_size_bytes': None if not local_rec else local_rec['local_size_bytes'],
+                'zip_path': None if not remote_rec else remote_rec['zip_path'],
+                'src_name': None if not remote_rec else remote_rec['src_name'],
+                'remote_hash': None if not remote_rec else remote_rec['remote_hash'],
+                'remote_commit_ts': None if not remote_rec else remote_rec['remote_commit_ts'],
+                'remote_size_bytes': None if not remote_rec else remote_rec['remote_size_bytes'],
+                'user': usr if not remote_rec else remote_rec['user'],
+                'remote_is_tombstone': False if not remote_rec else remote_rec['remote_is_tombstone'],
+                'same_hash': same_hash,
+                'sync_action': sync_action,
+                'sync_reason': sync_reason,
+            })
+        return pl.DataFrame(records)
 
-        # PUSH DELETE #------------------------------------------------------
-        df = df.with_columns(
-            (is_local & deleted_local).alias('sync_push_delete')
-        )
-        df = df.with_columns(pl.col('sync_push_delete').any().over(name_grp).alias('sync_push_delete'))
-
-        # PULL DELETE #------------------------------------------------------
-        df = df.with_columns(
-            (
-                    is_remote &
-                    is_zero &
-                    exists_local &
-                    ~is_owner &
-                    remote_is_newer
-            ).alias('sync_pull_delete')
-        )
-        df = df.with_columns(pl.col('sync_pull_delete').any().over(name_grp).alias('sync_pull_delete'))
-
+    def get_all(self, debug=False, refresh=False):
+        if refresh or self._cache_df is None:
+            self._cache_df = self._build_all()
+        df = self._cache_df
         if debug:
-            dbug_df = df.clone()
-            bool_cols = [c for c, dtype in zip(dbug_df.columns, dbug_df.dtypes) if dtype == pl.Boolean]
-            for col in bool_cols:
-                dbug_df = dbug_df.with_columns(pl.col(col).cast(pl.Int32))
-            drop_col_ls = ['file_path', 'zip_path', 'src_name']
-            print('ALL DATA FRAME STRING\n' + dbug_df.drop(drop_col_ls).to_string())
+            print('ALL DATA FRAME STRING\n' + str(df))
         return df
 
     def get_pull(self):
         df = self.get_all()
-        return df.filter(pl.col('sync_pull') & pl.col('zip_path').is_not_null())
+        return df.filter(pl.col('sync_action') == self.ACTION_PULL)
 
     def get_push(self):
         df = self.get_all()
-        return df.filter(pl.col('sync_push') & pl.col('local_exists'))
+        return df.filter(pl.col('sync_action') == self.ACTION_PUSH)
 
     def get_push_deleted(self):
         df = self.get_all()
-        return df.filter(pl.col('sync_push_delete'))
+        return df.filter(pl.col('sync_action') == self.ACTION_PUSH_DELETE)
 
     def get_pull_deleted(self):
         df = self.get_all()
-        return df.filter(pl.col('sync_pull_delete'))
+        return df.filter(pl.col('sync_action') == self.ACTION_PULL_DELETE)

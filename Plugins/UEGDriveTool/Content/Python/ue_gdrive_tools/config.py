@@ -25,7 +25,6 @@ if not uproject_files:
     raise FileNotFoundError(f"No .uproject file found in {PROJECT_DIR}")
 PROJECT_PATH = uproject_files[0]
 del uproject_files
-PROJECT_PATH = [os.path.join(PROJECT_DIR, fp) for fp in os.listdir(PROJECT_DIR) if fp.endswith('.uproject')][0]
 CONTENT_DIR = os.path.join(PROJECT_DIR, 'Content')
 VERSION_DIR = os.path.join(PROJECT_DIR, '_version_')
 os.makedirs(VERSION_DIR, exist_ok=True)
@@ -56,5 +55,6 @@ PROJECT_DIR_ID_PATH =  os.path.join(SETTING_DIR, 'gdrive_folder_id')
 if not os.path.exists(PROJECT_DIR_ID_PATH):
     with open(PROJECT_DIR_ID_PATH, 'x') as f:
         f.close()
-PROJECT_DIR_ID = None if not open(PROJECT_DIR_ID_PATH).read() else open(PROJECT_DIR_ID_PATH).read()
+with open(PROJECT_DIR_ID_PATH, 'r', encoding='utf-8') as f:
+    PROJECT_DIR_ID = f.read().strip() or None
 #------------------------------------------------------------

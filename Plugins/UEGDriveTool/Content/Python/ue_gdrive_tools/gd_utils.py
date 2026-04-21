@@ -16,14 +16,18 @@ class drive_handler:
         self.SCOPES = ['https://www.googleapis.com/auth/drive']
         self.creds = None
         self.service = self.authenticate()
-        if self.creds:
-            print(f'Get folder ID : {config.PROJECT_DIR_ID}')
+        if not self.creds:
+            raise RuntimeError(f"Drive service unavailable, check {config.SA_PATH}")
+        if not config.PROJECT_DIR_ID:
+            raise ValueError(f"Missing project folder ID in {config.PROJECT_DIR_ID_PATH}")
+        print(f'Get folder ID : {config.PROJECT_DIR_ID}')
+        file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
+        if not os.path.basename(config.VERSION_DIR) in list(file_items):
+            self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
             file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
-            if not os.path.basename(config.VERSION_DIR) in list(file_items):
-                self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
-            assert [i for i in list(file_items) if i.endswith('uproject')], '.\n--------\nProject folder should have uproject inside\n--------\n'
-            self._cleanup_storage()
-            print('Drive is connected.')
+        assert [i for i in list(file_items) if i.endswith('uproject')], '.\n--------\nProject folder should have uproject inside\n--------\n'
+        self._cleanup_storage()
+        print('Drive is connected.')
 
     def authenticate(self):
         import base64, json
@@ -48,8 +52,11 @@ class drive_handler:
             os.remove(config.SA_PATH)
         with open(config.SA_BIN_PATH, 'rb') as f:
             b64_data = f.read()
-            json_data = base64.b64decode(b64_data)
-            service_account_info = json.loads(json_data)
+            try:
+                json_data = base64.b64decode(b64_data)
+                service_account_info = json.loads(json_data)
+            except Exception as exc:
+                raise RuntimeError(f"Invalid service account cache at {config.SA_BIN_PATH}") from exc
 
         self.creds = service_account.Credentials.from_service_account_info(
             service_account_info,scopes=self.SCOPES)
@@ -59,14 +66,24 @@ class drive_handler:
     def list_files_in_drive(self, folder_id):
         query = f"'{folder_id}' in parents and trashed=false"
         try:
-            results = self.service.files().list(
-                q=query,
-                fields="files(id, name)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
-            ).execute()
-            files = results.get('files', [])
-            file_list = {file['name']: file['id'] for file in files}
+            file_list = {}
+            page_token = None
+            while True:
+                results = self.service.files().list(
+                    q=query,
+                    fields="nextPageToken, files(id, name)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                    pageToken=page_token,
+                    pageSize=1000,
+                ).execute()
+                for file in results.get('files', []):
+                    if file['name'] in file_list:
+                        print(f"Duplicate file name on Drive: {file['name']}, keeping the latest id")
+                    file_list[file['name']] = file['id']
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
             return file_list
         except HttpError as e:
             raise Warning(f"\nAPI returned an error:\n{e}\nPlease double check your setting")
@@ -88,17 +105,15 @@ class drive_handler:
 
     def download_file(self, file_id, destination_path):
         request = self.service.files().get_media(fileId=file_id)
-        fh = io.FileIO(destination_path, 'wb')
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
+        with io.FileIO(destination_path, 'wb') as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
         print(f"Downloaded {destination_path}")
 
     def _cleanup_storage(self, usage_limit_ratio=0.4):
-        import datetime
-
-        #Check current storage
+        # Keep this as an explicit opt-in hook instead of automatic deletion.
         about = self.service.about().get(fields="storageQuota").execute()
         storage = about.get('storageQuota', {})
         usage = int(storage.get('usage', 0))
@@ -110,70 +125,6 @@ class drive_handler:
             print("No storage limit detected. Skipping management.")
             return
 
-        # Start managing if over threshold
         if usage >= limit * usage_limit_ratio:
-            print("\nStorage exceeds threshold. Managing files...")
-
-            # Empty trash
-            try:
-                self.service.files().emptyTrash().execute()
-                print("Trash emptied successfully.")
-            except Exception as e:
-                print(f"Failed to empty trash: {e}")
-
-            # Recheck storage
-            about = self.service.about().get(fields="storageQuota").execute()
-            usage = int(about.get('storageQuota', {}).get('usage', 0))
-
-            if usage < limit * usage_limit_ratio:
-                print("Storage cleared after trash empty. No need to delete files.")
-                return
-
-            # List all files
-            files = []
-            page_token = None
-
-            while True:
-                response = self.service.files().list(
-                    fields="nextPageToken, files(id, name, createdTime, size)",
-                    spaces='drive',
-                    pageSize=1000,
-                    pageToken=page_token
-                ).execute()
-
-                for file in response.get('files', []):
-                    if 'size' in file:  # Only consider files with size (skip folders)
-                        files.append({
-                            'id': file['id'],
-                            'name': file['name'],
-                            'createdTime': file['createdTime'],
-                            'size': int(file['size'])
-                        })
-
-                page_token = response.get('nextPageToken', None)
-                if page_token is None:
-                    break
-
-            # Sort by createdTime
-            files.sort(key=lambda x: x['createdTime'])
-
-            # Deleting oldest files
-            deleted_count = 0
-            for file in files:
-                try:
-                    self.service.files().delete(fileId=file['id']).execute()
-                    deleted_count += 1
-                    print(f"Deleted {file['name']} ({file['size'] / (1024 ** 2):.2f} MB)")
-
-                    about = self.service.about().get(fields="storageQuota").execute()
-                    usage = int(about.get('storageQuota', {}).get('usage', 0))
-                    if usage < limit * usage_limit_ratio:
-                        print("\nStorage under control now.")
-                        break
-                except Exception as e:
-                    print(f"Failed to delete {file['name']}: {e}")
-
-            #if deleted_count == 0:
-                #print("No files were deleted.")
-        #else:
-            #print("\nStorage is under the threshold. No action needed.")
+            print("\nStorage exceeds threshold. Automatic deletion is disabled in this build.")
+            print("Please clean up Drive manually or wire this method to an explicit allowlist first.")
