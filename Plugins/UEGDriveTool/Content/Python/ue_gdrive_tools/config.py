@@ -32,7 +32,7 @@ LOG_DIR = os.path.join(ROOT_DIR, 'log')
 os.makedirs(LOG_DIR, exist_ok=True)
 
 TOOL_MODULE_NAME = 'gdrive_tools'
-CONTENT_PYTHON_DIR = os.path.join(CONTENT_DIR, 'Python')
+CONTENT_PYTHON_DIR = os.path.abspath(os.path.join(ROOT_DIR, '..'))
 os.makedirs(CONTENT_PYTHON_DIR, exist_ok=True)
 TOOL_PTH_DESIRE_PATH = os.path.join(CONTENT_PYTHON_DIR, f'{TOOL_MODULE_NAME}__pth')
 TOOL_INIT_PATH = os.path.join(CONTENT_PYTHON_DIR, TOOL_MODULE_NAME + '.py')

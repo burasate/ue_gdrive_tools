@@ -21,10 +21,23 @@ class drive_handler:
         if not config.PROJECT_DIR_ID:
             raise ValueError(f"Missing project folder ID in {config.PROJECT_DIR_ID_PATH}")
         print(f'Get folder ID : {config.PROJECT_DIR_ID}')
-        file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
-        if not os.path.basename(config.VERSION_DIR) in list(file_items):
-            self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
+        try:
             file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
+            if not os.path.basename(config.VERSION_DIR) in list(file_items):
+                self.create_folder(os.path.basename(config.VERSION_DIR), config.PROJECT_DIR_ID)
+                file_items = self.list_files_in_drive(config.PROJECT_DIR_ID)
+        except HttpError as e:
+            if e.resp.status == 404:
+                unreal = config.unreal
+                unreal.EditorDialog.show_message(
+                    title="Google Drive Sync Error",
+                    message=f"Folder ID '{config.PROJECT_DIR_ID}' not found in Google Drive.\n\nPlease make sure the folder exists and you have shared it with the Service Account email as an 'Editor'.",
+                    message_type=unreal.AppMsgType.OK,
+                    default_value=unreal.AppReturnType.OK
+                )
+                raise RuntimeError("Drive sync aborted: Folder ID not found or missing permissions.") from e
+            else:
+                raise
         assert [i for i in list(file_items) if i.endswith('uproject')], '.\n--------\nProject folder should have uproject inside\n--------\n'
         self._cleanup_storage()
         print('Drive is connected.')

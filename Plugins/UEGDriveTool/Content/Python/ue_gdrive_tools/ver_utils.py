@@ -322,7 +322,8 @@ class database:
                 'sync_action': sync_action,
                 'sync_reason': sync_reason,
             })
-        return pl.DataFrame(records)
+        empty_schema = self._empty_df().schema
+        return pl.DataFrame(records, schema=empty_schema)
 
     def get_all(self, debug=False, refresh=False):
         if refresh or self._cache_df is None:

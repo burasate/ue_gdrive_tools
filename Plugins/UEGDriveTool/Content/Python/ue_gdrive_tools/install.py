@@ -108,6 +108,10 @@ def run_install(*_):
     system_library.quit_editor()
 
 if __name__ == '__main__':
+    if os.path.exists(config.TOOL_INIT_PATH):
+        print("UE GDrive Tools is already installed.")
+        sys.exit(0)
+        
     ed = unreal.EditorDialog.show_message(
         title="Confirm Action",
         message="Do you want to proceed installation \"UE GDrive Tools\" on this PROJECT?",

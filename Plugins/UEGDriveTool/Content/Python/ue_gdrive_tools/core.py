@@ -132,6 +132,12 @@ def _commit_new_version():
     version_dir_id = file_items.get(os.path.basename(config.VERSION_DIR))
     if version_dir_id:
         gdrive.upload_file(zip_path, version_dir_id)
+        unreal.EditorDialog.show_message(
+            title="Upload Successful",
+            message="Your latest changes were successfully committed and uploaded to Google Drive!",
+            message_type=unreal.AppMsgType.OK,
+            default_value=unreal.AppReturnType.OK
+        )
     else:
         os.remove(zip_path)
 
